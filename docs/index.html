@@ -144,6 +144,7 @@
         <label class="f">Key gap <input id="gap" type="number" step="0.1" min="0" value="4"></label>
         <label class="f">Tab width <input id="tabw" type="number" step="0.1" min="0" value="3"></label>
         <label class="f">Tab height <input id="tabh" type="number" step="0.1" min="0" value="2"></label>
+        <label class="f">Snap web <input id="web" type="number" step="0.1" min="0" value="1"></label>
       </div>
       <label class="chk"><input id="datum" type="checkbox" checked> Engrave datum mark</label>
     </fieldset>
@@ -180,7 +181,8 @@
     </div>
     <p class="hint">Slot 0 stays at 0°. The datum mark and any tabs rotate by plate × skew, so stacking
       every plate on its own datum gives the helical offset. With 0 pairs the engraved mark is the only
-      index, so align in a pin jig or by eye.</p>
+      index, so align in a pin jig or by eye. The snap web is the material left holding each tab after
+      the root is scored — set it to 0 to keep the tabs on as housing keys.</p>
   </aside>
 </div>
 
@@ -195,7 +197,7 @@ function readParams() {
     R: num('od') / 2, r: num('id') / 2,
     n: Math.max(0, Math.round(num('n'))), sw: num('sw'), sd: num('sd'),
     pairs: Math.max(0, Math.round(num('pairs'))), gap: num('gap'),
-    tabW: num('tabw'), tabH: num('tabh'), datum: $('datum').checked,
+    tabW: num('tabw'), tabH: num('tabh'), web: num('web'), datum: $('datum').checked,
     plates: Math.max(1, Math.round(num('plates'))), skew: num('skew'),
     idx: Math.round(num('idx')), engrave: $('engrave').checked,
   };
@@ -243,14 +245,36 @@ function tabAngles(p, datumDeg) {
   return out;
 }
 
-// The two closed outlines of a plate. Coil slots sit on the bore and are cut
-// outward (teeth point inward); the outer rim carries the alignment tabs.
+// A pair of cuts across each tab root, leaving `web` mm of material holding it
+// in the middle, so the tab snaps off by hand once the stack is bonded and
+// before it is wound. The cuts run along the root chord and meet the outline at
+// the tab corners. A web of 0, or one at least as wide as the tab, leaves the
+// root solid — for tabs meant to stay on as housing keys.
+function tabScores(p, datumDeg) {
+  const angles = tabAngles(p, datumDeg);
+  if (!angles.length || p.web <= 0 || p.web >= p.tabW) return [];
+  const h = Math.min(p.tabW / 2, p.R * 0.999);
+  const xo = Math.sqrt(p.R * p.R - h * h);
+  const w = p.web / 2;
+  const rot = (x, y, ang) => [x * Math.cos(ang) - y * Math.sin(ang), x * Math.sin(ang) + y * Math.cos(ang)];
+  return angles.flatMap(deg => {
+    const ang = deg * Math.PI / 180;
+    return [
+      { t: 'line', p: rot(xo, -h, ang), q: rot(xo, -w, ang) },
+      { t: 'line', p: rot(xo, w, ang), q: rot(xo, h, ang) },
+    ];
+  });
+}
+
+// The two closed outlines of a plate, plus any root scores. Coil slots sit on
+// the bore and are cut outward (teeth point inward); the rim carries the tabs.
 function plateOutlines(p, plateIndex) {
   const angle = plateIndex * p.skew;
   return {
     angle,
     rim: ringProfile(p.R, tabAngles(p, angle), p.tabW, p.tabH, +1),
     bore: p.r > 0 ? ringProfile(p.r, evenAngles(p.n, 0), p.sw, p.sd, +1) : [],
+    scores: tabScores(p, angle),
   };
 }
 
@@ -279,8 +303,8 @@ function plateLabel(p, plateIndex) {
 
 // Plate as a flat list of primitives for DXF: {layer, ...}
 function platePrimitives(p, plateIndex) {
-  const { rim, bore } = plateOutlines(p, plateIndex);
-  const out = [...rim, ...bore].map(s => ({ ...s, layer: 'CUT' }));
+  const { rim, bore, scores } = plateOutlines(p, plateIndex);
+  const out = [...rim, ...bore, ...scores].map(s => ({ ...s, layer: 'CUT' }));
   const tick = datumMark(p, plateIndex);
   if (tick) out.push({ ...tick, layer: 'ENGRAVE' });
   const label = plateLabel(p, plateIndex);
@@ -291,7 +315,7 @@ function platePrimitives(p, plateIndex) {
 // On screen the outlines follow the theme; an exported file always carries the
 // laser convention — near-black CUT, red ENGRAVE — whatever the viewer's theme.
 function plateMarkup(p, plateIndex, { guides = false, preview = false } = {}) {
-  const { rim, bore, angle } = plateOutlines(p, plateIndex);
+  const { rim, bore, scores, angle } = plateOutlines(p, plateIndex);
   const cutInk = preview ? 'var(--cut)' : '#0f1a2b';
   const engraveInk = preview ? 'var(--engrave)' : '#d1291d';
   const sk = preview
@@ -299,6 +323,8 @@ function plateMarkup(p, plateIndex, { guides = false, preview = false } = {}) {
     : 'fill="none" stroke-width="0.1"';
   let s = `<path d="${segsToPath(rim)}" stroke="${cutInk}" ${sk}/>`;
   if (bore.length) s += `<path d="${segsToPath(bore)}" stroke="${cutInk}" ${sk}/>`;
+  for (const c of scores)
+    s += `<line x1="${f4(c.p[0])}" y1="${f4(c.p[1])}" x2="${f4(c.q[0])}" y2="${f4(c.q[1])}" stroke="${cutInk}" ${sk}/>`;
   const tick = datumMark(p, plateIndex);
   if (tick) s += `<line x1="${f4(tick.p[0])}" y1="${f4(tick.p[1])}" x2="${f4(tick.q[0])}" y2="${f4(tick.q[1])}"
       stroke="${engraveInk}" ${sk}/>`;
@@ -386,6 +412,8 @@ function validate(p) {
     if (p.tabW <= 0 || p.tabH <= 0) msgs.push('Tabs need a width and a height above zero.');
     else if (minSpacing(tabAngles(p, 0)) <= p.tabW / p.R)
       msgs.push('Tabs overlap: reduce the pair count or tab width, or widen the key gap.');
+    else if (p.web > 0 && p.web >= p.tabW)
+      msgs.push('Snap web is at least as wide as the tab, so the root stays solid.');
   }
   return msgs;
 }
@@ -412,7 +440,10 @@ function render() {
     `slot pitch <b>${g.pitch.toFixed(2)} mm</b> (${g.slotPitchDeg.toFixed(3)}°) &nbsp;·&nbsp; ` +
     `tooth tip <b>${g.tooth.toFixed(2)} mm</b> &nbsp;·&nbsp; yoke <b>${g.yoke.toFixed(2)} mm</b><br>` +
     `stack twist ${twist.toFixed(2)}° = ${inPitch} slot pitches` +
-    (p.pairs > 0 ? ` &nbsp;·&nbsp; ${p.pairs * 2} tabs, yoke full section` : '');
+    (p.pairs > 0
+      ? ` &nbsp;·&nbsp; ${p.pairs * 2} tabs, yoke full section, ` +
+        (p.web > 0 && p.web < p.tabW ? `${p.web.toFixed(1)} mm snap web` : 'solid roots')
+      : '');
 }
 
 /* ---- Saving -------------------------------------------------------------
