@@ -93,6 +93,13 @@
   .status { font-size: 12.5px; color: var(--ink-2); margin: 8px 0 0; min-height: 1.4em; }
   .status[data-tone="warn"] { color: var(--warn); }
 
+  /* Copy-out panel: the fallback when the host will not let the page save a file. */
+  .copyout { margin-top: 10px; display: grid; gap: 6px; }
+  .copyout textarea { font-family: var(--mono); font-size: 11px; line-height: 1.4; width: 100%;
+    height: 140px; padding: 8px; resize: vertical; color: var(--ink); background: var(--field);
+    border: 1px solid var(--line); border-radius: 6px; white-space: pre; overflow-wrap: normal; overflow-x: auto; }
+  .copyout textarea:focus { outline: 2px solid var(--guide); outline-offset: 1px; border-color: var(--guide); }
+
   @media (min-width: 900px) {
     .app { grid-template-columns: minmax(0, 1fr) 360px; }
     .preview { min-height: 100%; }
@@ -131,11 +138,14 @@
     </fieldset>
 
     <fieldset>
-      <legend>Alignment notch (outer rim)</legend>
+      <legend>Alignment tabs (outer rim)</legend>
       <div class="grid">
-        <label class="f">Width <input id="kw" type="number" step="0.1" min="0" value="4"></label>
-        <label class="f">Depth <input id="kd" type="number" step="0.1" min="0" value="2"></label>
+        <label class="f">Pairs <input id="pairs" type="number" step="1" min="0" value="0"></label>
+        <label class="f">Key gap <input id="gap" type="number" step="0.1" min="0" value="4"></label>
+        <label class="f">Tab width <input id="tabw" type="number" step="0.1" min="0" value="3"></label>
+        <label class="f">Tab height <input id="tabh" type="number" step="0.1" min="0" value="2"></label>
       </div>
+      <label class="chk"><input id="datum" type="checkbox" checked> Engrave datum mark</label>
     </fieldset>
 
     <fieldset>
@@ -163,7 +173,14 @@
       <button id="dlAll" class="secondary">Download whole stack as one SVG</button>
     </div>
     <p class="status" id="status" role="status"></p>
-    <p class="hint">Slot 0 stays at 0°. The rim notch rotates by plate × skew, so stacking with every notch against one key in the jig gives the helical offset.</p>
+    <div class="copyout" id="copyout" hidden>
+      <label class="f" for="copytext">Copy this into a file and save it under the name above</label>
+      <textarea id="copytext" readonly spellcheck="false"></textarea>
+      <button id="copybtn" class="tiny">Copy to clipboard</button>
+    </div>
+    <p class="hint">Slot 0 stays at 0°. The datum mark and any tabs rotate by plate × skew, so stacking
+      every plate on its own datum gives the helical offset. With 0 pairs the engraved mark is the only
+      index, so align in a pin jig or by eye.</p>
   </aside>
 </div>
 
@@ -171,67 +188,83 @@
 const $ = id => document.getElementById(id);
 const num = id => parseFloat($(id).value) || 0;
 const f4 = v => (+v.toFixed(4)).toString();
+const TAU = 2 * Math.PI;
 
 function readParams() {
   return {
     R: num('od') / 2, r: num('id') / 2,
     n: Math.max(0, Math.round(num('n'))), sw: num('sw'), sd: num('sd'),
-    kw: num('kw'), kd: num('kd'),
+    pairs: Math.max(0, Math.round(num('pairs'))), gap: num('gap'),
+    tabW: num('tabw'), tabH: num('tabh'), datum: $('datum').checked,
     plates: Math.max(1, Math.round(num('plates'))), skew: num('skew'),
     idx: Math.round(num('idx')), engrave: $('engrave').checked,
   };
 }
 
-// Circle of `radius` with `count` rectangular parallel-sided notches of `width`,
-// cut `depth` in the direction `dir` (-1 = inward, +1 = outward).
-// Notch 0 is centred on angle `offsetDeg`. Returns line/arc segments in mm,
-// x right, y down (screen frame), angles in radians increasing clockwise on screen.
-function notchedCircle(radius, count, width, depth, offsetDeg, dir) {
-  if (count < 1 || width <= 0 || depth <= 0)
+// Circle of `radius` carrying a rectangular parallel-sided feature of `width`
+// centred on each angle in `angleDegs`, standing `depth` proud (dir +1) or cut
+// in (dir -1). Returns line/arc segments in mm, x right, y down (screen frame),
+// angles in radians increasing clockwise on screen.
+function ringProfile(radius, angleDegs, width, depth, dir) {
+  if (!angleDegs.length || width <= 0 || depth <= 0)
     return [{ t: 'circle', r: radius }];
   const h = Math.min(width / 2, radius * 0.999);
   const xo = Math.sqrt(radius * radius - h * h);
   const xb = radius + dir * depth;
   const alpha = Math.asin(h / radius);
-  const step = 2 * Math.PI / count;
   const rot = (x, y, t) => [x * Math.cos(t) - y * Math.sin(t), x * Math.sin(t) + y * Math.cos(t)];
+  const ts = angleDegs.map(a => ((a * Math.PI / 180) % TAU + TAU) % TAU).sort((a, b) => a - b);
   const segs = [];
-  for (let i = 0; i < count; i++) {
-    const t = offsetDeg * Math.PI / 180 + i * step;
+  for (let i = 0; i < ts.length; i++) {
+    const t = ts[i];
+    const next = i + 1 < ts.length ? ts[i + 1] : ts[0] + TAU;
     const a = rot(xo, -h, t), b = rot(xb, -h, t), c = rot(xb, h, t), d = rot(xo, h, t);
     segs.push({ t: 'line', p: a, q: b }, { t: 'line', p: b, q: c }, { t: 'line', p: c, q: d });
-    segs.push({ t: 'arc', r: radius, a1: t + alpha, a2: t + step - alpha });
+    segs.push({ t: 'arc', r: radius, a1: t + alpha, a2: next - alpha });
   }
   return segs;
 }
 
-function segsToPath(segs) {
-  let d = '';
-  for (const s of segs) {
-    if (s.t === 'circle')
-      d += `M${f4(s.r)} 0A${f4(s.r)} ${f4(s.r)} 0 1 1 ${f4(-s.r)} 0A${f4(s.r)} ${f4(s.r)} 0 1 1 ${f4(s.r)} 0Z`;
-    else if (s.t === 'line')
-      d += `${d ? 'L' : 'M' + f4(s.p[0]) + ' ' + f4(s.p[1]) + 'L'}${f4(s.q[0])} ${f4(s.q[1])}`;
-    else {
-      const large = (s.a2 - s.a1) > Math.PI ? 1 : 0;
-      d += `A${f4(s.r)} ${f4(s.r)} 0 ${large} 1 ${f4(s.r * Math.cos(s.a2))} ${f4(s.r * Math.sin(s.a2))}`;
-    }
+const evenAngles = (count, offsetDeg) =>
+  Array.from({ length: count }, (_, i) => offsetDeg + i * 360 / count);
+
+// Each alignment feature is a PAIR of outward tabs straddling the datum angle;
+// the key rides in the gap between them, so the rim keeps full yoke section
+// instead of losing 20% of it to a notch. Tabs are radially oriented, so the
+// gap splays slightly outward — `gap` is the width at the rim.
+function tabAngles(p, datumDeg) {
+  if (p.pairs < 1 || p.tabW <= 0 || p.tabH <= 0 || p.R <= 0) return [];
+  const halfDeg = (p.gap + p.tabW) / 2 / p.R * 180 / Math.PI;
+  const out = [];
+  for (let i = 0; i < p.pairs; i++) {
+    const base = datumDeg + i * 360 / p.pairs;
+    out.push(base - halfDeg, base + halfDeg);
   }
-  return d + (segs[0].t === 'circle' ? '' : 'Z');
+  return out;
 }
 
 // The two closed outlines of a plate. Coil slots sit on the bore and are cut
-// outward (teeth point inward); the outer rim carries the alignment notch.
+// outward (teeth point inward); the outer rim carries the alignment tabs.
 function plateOutlines(p, plateIndex) {
   const angle = plateIndex * p.skew;
   return {
     angle,
-    rim: notchedCircle(p.R, 1, p.kw, p.kd, angle, -1),
-    bore: p.r > 0 ? notchedCircle(p.r, p.n, p.sw, p.sd, 0, +1) : [],
+    rim: ringProfile(p.R, tabAngles(p, angle), p.tabW, p.tabH, +1),
+    bore: p.r > 0 ? ringProfile(p.r, evenAngles(p.n, 0), p.sw, p.sd, +1) : [],
   };
 }
 
-// Plate number, engraved in the yoke opposite the alignment notch.
+// Engraved radial tick at the datum angle. Removes no material, so it costs
+// nothing magnetically — with 0 tab pairs it is the only index on the plate.
+function datumMark(p, plateIndex) {
+  const yoke = p.R - p.sd - p.r;
+  if (!p.datum || yoke <= 1) return null;
+  const a = plateIndex * p.skew * Math.PI / 180;
+  const r1 = p.r + p.sd + yoke * 0.2, r2 = p.r + p.sd + yoke * 0.8;
+  return { t: 'line', p: [r1 * Math.cos(a), r1 * Math.sin(a)], q: [r2 * Math.cos(a), r2 * Math.sin(a)] };
+}
+
+// Plate number, engraved in the yoke opposite the datum.
 function plateLabel(p, plateIndex) {
   if (!p.engrave) return null;
   const yoke = p.R - p.sd - p.r;
@@ -248,6 +281,8 @@ function plateLabel(p, plateIndex) {
 function platePrimitives(p, plateIndex) {
   const { rim, bore } = plateOutlines(p, plateIndex);
   const out = [...rim, ...bore].map(s => ({ ...s, layer: 'CUT' }));
+  const tick = datumMark(p, plateIndex);
+  if (tick) out.push({ ...tick, layer: 'ENGRAVE' });
   const label = plateLabel(p, plateIndex);
   if (label) out.push(label);
   return out;
@@ -264,6 +299,9 @@ function plateMarkup(p, plateIndex, { guides = false, preview = false } = {}) {
     : 'fill="none" stroke-width="0.1"';
   let s = `<path d="${segsToPath(rim)}" stroke="${cutInk}" ${sk}/>`;
   if (bore.length) s += `<path d="${segsToPath(bore)}" stroke="${cutInk}" ${sk}/>`;
+  const tick = datumMark(p, plateIndex);
+  if (tick) s += `<line x1="${f4(tick.p[0])}" y1="${f4(tick.p[1])}" x2="${f4(tick.q[0])}" y2="${f4(tick.q[1])}"
+      stroke="${engraveInk}" ${sk}/>`;
   const t = plateLabel(p, plateIndex);
   if (t) s += `<text x="${f4(t.x)}" y="${f4(t.y)}" font-size="${f4(t.h)}" font-family="Arial, sans-serif"
       text-anchor="middle" dominant-baseline="central" fill="${engraveInk}" transform="rotate(${t.rot.toFixed(2)} ${f4(t.x)} ${f4(t.y)})">${t.s}</text>`;
@@ -275,6 +313,21 @@ function plateMarkup(p, plateIndex, { guides = false, preview = false } = {}) {
     s += `<circle cx="0" cy="0" r="${f4(p.R * 0.008)}" fill="var(--guide)"/>`;
   }
   return s;
+}
+
+function segsToPath(segs) {
+  let d = '';
+  for (const s of segs) {
+    if (s.t === 'circle')
+      d += `M${f4(s.r)} 0A${f4(s.r)} ${f4(s.r)} 0 1 1 ${f4(-s.r)} 0A${f4(s.r)} ${f4(s.r)} 0 1 1 ${f4(s.r)} 0Z`;
+    else if (s.t === 'line')
+      d += `${d ? 'L' : 'M' + f4(s.p[0]) + ' ' + f4(s.p[1]) + 'L'}${f4(s.q[0])} ${f4(s.q[1])}`;
+    else {
+      const large = (s.a2 - s.a1) > Math.PI ? 1 : 0;
+      d += `A${f4(s.r)} ${f4(s.r)} 0 ${large} 1 ${f4(s.r * Math.cos(s.a2))} ${f4(s.r * Math.sin(s.a2))}`;
+    }
+  }
+  return d + (segs[0].t === 'circle' ? '' : 'Z');
 }
 
 function svgDoc(inner, w, h) {
@@ -312,6 +365,15 @@ function metrics(p) {
   return { pitch, tooth, yoke: p.R - p.sd - p.r, slotPitchDeg: p.n > 0 ? 360 / p.n : 0 };
 }
 
+// Smallest angular gap between consecutive features, in radians.
+function minSpacing(angleDegs) {
+  const ts = angleDegs.map(a => ((a * Math.PI / 180) % TAU + TAU) % TAU).sort((a, b) => a - b);
+  if (ts.length < 2) return TAU;
+  let min = TAU + ts[0] - ts[ts.length - 1];
+  for (let i = 1; i < ts.length; i++) min = Math.min(min, ts[i] - ts[i - 1]);
+  return min;
+}
+
 function validate(p) {
   const m = metrics(p);
   const msgs = [];
@@ -320,7 +382,11 @@ function validate(p) {
   if (p.n > 0 && p.sw >= 2 * p.r) msgs.push('Slot width exceeds the bore diameter.');
   if (p.n > 0 && m.tooth <= 0) msgs.push('Teeth have no width left: reduce slot count or slot width.');
   if (m.yoke <= 0) msgs.push('Slot depth eats through the ring.');
-  if (m.yoke - p.kd <= 0) msgs.push('Alignment notch breaks into the slot bottoms.');
+  if (p.pairs > 0) {
+    if (p.tabW <= 0 || p.tabH <= 0) msgs.push('Tabs need a width and a height above zero.');
+    else if (minSpacing(tabAngles(p, 0)) <= p.tabW / p.R)
+      msgs.push('Tabs overlap: reduce the pair count or tab width, or widen the key gap.');
+  }
   return msgs;
 }
 
@@ -331,27 +397,30 @@ function render() {
   $('idxOut').value = p.idx;
   $('warn').textContent = validate(p)[0] || '';
 
-  const m = p.R * 0.06 + 2;
-  const size = 2 * (p.R + m);
+  const reach = p.R + (p.pairs > 0 ? Math.max(0, p.tabH) : 0);
+  const m = reach * 0.06 + 2;
+  const size = 2 * (reach + m);
   $('svgHost').innerHTML =
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-p.R - m} ${-p.R - m} ${size} ${size}">
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-reach - m} ${-reach - m} ${size} ${size}">
        ${plateMarkup(p, p.idx, { guides: true, preview: true })}</svg>`;
 
   const g = metrics(p);
   const twist = (p.plates - 1) * p.skew;
   const inPitch = g.slotPitchDeg > 0 ? (twist / g.slotPitchDeg).toFixed(2) : '—';
   $('readout').innerHTML =
-    `Plate <b>${p.idx}</b> of ${p.plates} &nbsp;·&nbsp; notch at <b>${(p.idx * p.skew).toFixed(2)}°</b> &nbsp;·&nbsp; ` +
+    `Plate <b>${p.idx}</b> of ${p.plates} &nbsp;·&nbsp; datum at <b>${(p.idx * p.skew).toFixed(2)}°</b> &nbsp;·&nbsp; ` +
     `slot pitch <b>${g.pitch.toFixed(2)} mm</b> (${g.slotPitchDeg.toFixed(3)}°) &nbsp;·&nbsp; ` +
     `tooth tip <b>${g.tooth.toFixed(2)} mm</b> &nbsp;·&nbsp; yoke <b>${g.yoke.toFixed(2)} mm</b><br>` +
-    `stack twist ${twist.toFixed(2)}° = ${inPitch} slot pitches`;
+    `stack twist ${twist.toFixed(2)}° = ${inPitch} slot pitches` +
+    (p.pairs > 0 ? ` &nbsp;·&nbsp; ${p.pairs * 2} tabs, yoke full section` : '');
 }
 
 /* ---- Saving -------------------------------------------------------------
    Published on claude.ai the page cannot start a download itself, so it hands
    the file to the `downloads` capability and the viewer confirms it. Opened as
    a plain local file there is no capability, so it falls back to a blob link.
-   One source, both hosts.                                                   */
+   Where neither works — a signed-out viewer, say — the text is shown for
+   copying, which no host can block.                                         */
 
 let dlNs, dlResolved = false;
 async function downloads() {
@@ -361,6 +430,16 @@ async function downloads() {
   return dlNs;
 }
 
+// `permissions` is built in and `state` never prompts, so it can tell a denial
+// apart from a capability that was never served to this view.
+async function downloadsState() {
+  try {
+    const perms = await window.claude?.use?.('permissions');
+    const state = await perms?.state?.('downloads');
+    return typeof state === 'string' ? state : state?.downloads ?? null;
+  } catch { return null; }
+}
+
 let statusTimer;
 function status(text, tone = '') {
   const el = $('status');
@@ -368,6 +447,12 @@ function status(text, tone = '') {
   el.dataset.tone = tone;
   clearTimeout(statusTimer);
   if (text) statusTimer = setTimeout(() => { el.textContent = ''; el.dataset.tone = ''; }, 8000);
+}
+
+function offerCopy(filename, text, message, tone = 'warn') {
+  $('copytext').value = text;
+  $('copyout').hidden = false;
+  status(`${message} Copy the text below and save it as ${filename}.`, tone);
 }
 
 const SAVE_ERRORS = {
@@ -387,13 +472,16 @@ function saveViaBlob(filename, text, mime) {
 async function saveFile(filename, text, mime) {
   const dl = await downloads();
   if (!dl) {
-    if (window.claude) { status('Saving files is not available in this view.', 'warn'); return; }
-    saveViaBlob(filename, text, mime);
-    status(`Saved ${filename}`);
+    if (!window.claude) { saveViaBlob(filename, text, mime); status(`Saved ${filename}`); return; }
+    const state = await downloadsState();
+    offerCopy(filename, text, state === 'denied'
+      ? 'You have blocked file saving for this page.'
+      : 'This view cannot save files — signing in to claude.ai enables it.');
     return;
   }
   try {
     await dl.save({ filename, data: text });
+    $('copyout').hidden = true;
     status(`Saved ${filename}`);
   } catch (err) {
     const code = err?.code ?? 'unavailable';
@@ -402,25 +490,28 @@ async function saveFile(filename, text, mime) {
     if (code === 'rejected_extension' && filename.endsWith('.dxf')) {
       try {
         await dl.save({ filename: `${filename}.txt`, data: text });
+        $('copyout').hidden = true;
         status(`Saved ${filename}.txt — rename it to ${filename} to open it in CAD.`);
       } catch (retry) {
-        status(SAVE_ERRORS[retry?.code] ?? 'The file could not be saved in this view.', 'warn');
+        offerCopy(filename, text, SAVE_ERRORS[retry?.code] ?? 'This view cannot save files.');
       }
       return;
     }
-    status(SAVE_ERRORS[code] ?? 'The file could not be saved in this view.', 'warn');
+    if (code === 'declined') { status(SAVE_ERRORS.declined); return; }
+    offerCopy(filename, text, SAVE_ERRORS[code] ?? 'This view cannot save files.');
   }
 }
 
 function exportPlates(indices, name) {
   const p = readParams();
   const fmt = $('fmt').value;
-  const gap = 3, cell = 2 * p.R + gap;
+  const reach = p.R + (p.pairs > 0 ? Math.max(0, p.tabH) : 0);
+  const gap = 3, cell = 2 * reach + gap;
   const cols = Math.ceil(Math.sqrt(indices.length)), rows = Math.ceil(indices.length / cols);
   const items = indices.map((idx, k) => ({
     idx,
-    dx: (k % cols) * cell + p.R + gap / 2,
-    dy: Math.floor(k / cols) * cell + p.R + gap / 2,
+    dx: (k % cols) * cell + reach + gap / 2,
+    dy: Math.floor(k / cols) * cell + reach + gap / 2,
   }));
   if (fmt === 'svg') {
     const inner = items.map(it => `<g transform="translate(${f4(it.dx)} ${f4(it.dy)})">${plateMarkup(p, it.idx)}</g>`).join('\n');
@@ -435,6 +526,17 @@ $('fitSkew').onclick = () => {
   if (p.n < 1 || p.plates < 2) return;
   $('skew').value = (360 / p.n / (p.plates - 1)).toFixed(3);
   render();
+};
+
+$('copybtn').onclick = async () => {
+  const ta = $('copytext');
+  try {
+    await navigator.clipboard.writeText(ta.value);
+    status('Copied to clipboard.');
+  } catch {
+    ta.focus(); ta.select();
+    status('Text selected — press Ctrl+C or Cmd+C to copy.');
+  }
 };
 
 $('dlOne').onclick = () => { const p = readParams(); exportPlates([p.idx], `disc_plate${String(p.idx).padStart(2, '0')}`); };
