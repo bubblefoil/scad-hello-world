@@ -28,9 +28,13 @@ Source: [`docs/index.html`](docs/index.html) — a single self-contained file wi
 no build step and no dependencies. Download it and open it in a browser to run
 it offline; it detects its host and saves exports either way.
 
-### Self-hosting on GitHub Pages
+### GitHub Pages
 
-`docs/index.html` is laid out to be served straight from Pages. To turn it on:
-**Settings → Pages → Source: _Deploy from a branch_ → branch `main`, folder
-`/docs`**. The page is then served at
-`https://bubblefoil.github.io/scad-hello-world/`.
+`.github/workflows/pages.yml` publishes `docs/` to
+<https://bubblefoil.github.io/scad-hello-world/> on every push to `main` that
+touches it. The workflow calls `configure-pages` with enablement, so the first
+successful run switches Pages on by itself.
+
+That call needs a write-capable workflow token. If the run fails there, set
+**Settings → Actions → General → Workflow permissions** to _Read and write_, or
+switch Pages on by hand under **Settings → Pages**.

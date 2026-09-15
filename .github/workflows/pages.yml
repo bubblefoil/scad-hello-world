@@ -1,0 +1,45 @@
+name: Deploy docs to GitHub Pages
+
+# Publishes docs/ at https://bubblefoil.github.io/scad-hello-world/.
+# configure-pages runs with enablement, so the first successful run turns Pages
+# on by itself — no repository setting to click beforehand. That call needs the
+# workflow token to have write access: if the run fails on it, set
+# Settings -> Actions -> General -> Workflow permissions to "Read and write",
+# or switch Pages on by hand under Settings -> Pages.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
