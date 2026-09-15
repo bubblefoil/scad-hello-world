@@ -2,28 +2,67 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Lamination disc</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap">
 <style>
+  /* Light palette — the complete token set. Dark blocks below redefine only these. */
   :root {
     --paper: #eef0f2;
     --panel: #ffffff;
+    --field: #ffffff;
     --ink: #172033;
     --ink-2: #5b6474;
     --line: #cfd5dd;
-    --cut: #0f1a2b;
+    --cut: #0f1a2b;        /* preview stroke only; exports always use the literals */
     --engrave: #d1291d;
     --guide: #3b7bbf;
     --warn: #b45309;
+    --accent: #0f1a2b;
+    --accent-ink: #ffffff;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #12161c;
+      --panel: #191f27;
+      --field: #10151b;
+      --ink: #e5eaf0;
+      --ink-2: #93a0b1;
+      --line: #2e3844;
+      --cut: #dde4ec;
+      --engrave: #ff6b5e;
+      --guide: #5b9fe0;
+      --warn: #f0a33c;
+      --accent: #e2e8f0;
+      --accent-ink: #131a22;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #12161c;
+    --panel: #191f27;
+    --field: #10151b;
+    --ink: #e5eaf0;
+    --ink-2: #93a0b1;
+    --line: #2e3844;
+    --cut: #dde4ec;
+    --engrave: #ff6b5e;
+    --guide: #5b9fe0;
+    --warn: #f0a33c;
+    --accent: #e2e8f0;
+    --accent-ink: #131a22;
+  }
+
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   html, body { margin: 0; background: var(--paper); color: var(--ink);
     font: 15px/1.45 "Avenir Next", "Segoe UI", Helvetica, Arial, sans-serif; }
-  .app { display: grid; grid-template-columns: 1fr; min-height: 100vh; }
+  .app { display: grid; grid-template-columns: 1fr; min-height: 100%; }
   .preview { display: flex; flex-direction: column; align-items: center; justify-content: center;
-    width: 100%; min-width: 0; padding: 20px 16px 8px; min-height: 58vh; }
+    width: 100%; min-width: 0; padding: 20px 16px 8px; min-height: 55dvh; }
   .preview svg { width: min(100%, 78vh); max-width: 720px; height: auto; display: block; }
-  .readout { margin-top: 10px; color: var(--ink-2); font-size: 13px; font-variant-numeric: tabular-nums; text-align: center; }
+  .readout { margin-top: 12px; color: var(--ink-2); font-family: var(--mono); font-size: 12px;
+    line-height: 1.7; font-variant-numeric: tabular-nums; text-align: center; max-width: 60ch; }
   .readout b { color: var(--ink); font-weight: 600; }
   .warn { color: var(--warn); font-size: 13px; text-align: center; margin-top: 6px; min-height: 1.4em; }
 
@@ -35,28 +74,32 @@
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
   label.f { display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; color: var(--ink-2); }
   label.f input, label.f select { font: inherit; font-size: 15px; color: var(--ink); padding: 7px 9px;
-    border: 1px solid var(--line); border-radius: 6px; background: #fff; width: 100%; font-variant-numeric: tabular-nums; }
+    border: 1px solid var(--line); border-radius: 6px; background: var(--field); width: 100%; }
+  label.f input { font-family: var(--mono); font-size: 14px; font-variant-numeric: tabular-nums; }
   label.f input:focus, label.f select:focus { outline: 2px solid var(--guide); outline-offset: 1px; border-color: var(--guide); }
   label.chk { display: flex; align-items: center; gap: 8px; font-size: 13.5px; margin-top: 8px; }
   .plate { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; margin-top: 6px; }
   .plate input[type=range] { width: 100%; accent-color: var(--guide); }
-  .plate output { font-variant-numeric: tabular-nums; min-width: 4.5em; text-align: right; font-weight: 600; }
+  .plate output { font-family: var(--mono); font-variant-numeric: tabular-nums;
+    min-width: 4.5em; text-align: right; font-weight: 600; }
   .actions { display: grid; gap: 8px; margin-top: 6px; }
   button { font: inherit; font-weight: 600; padding: 11px 14px; border-radius: 8px; cursor: pointer;
-    border: 1px solid var(--cut); background: var(--cut); color: #fff; }
-  button.secondary { background: #fff; color: var(--cut); }
+    border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); }
+  button.secondary { background: var(--panel); color: var(--ink); border-color: var(--line); }
   button.tiny { font-size: 12.5px; font-weight: 500; padding: 6px 10px; margin-top: 8px;
-    background: #fff; color: var(--cut); border-color: var(--line); }
+    background: var(--panel); color: var(--ink); border-color: var(--line); }
   button:focus-visible { outline: 2px solid var(--guide); outline-offset: 2px; }
   .hint { font-size: 12.5px; color: var(--ink-2); margin: 10px 0 0; }
+  .status { font-size: 12.5px; color: var(--ink-2); margin: 8px 0 0; min-height: 1.4em; }
+  .status[data-tone="warn"] { color: var(--warn); }
 
   @media (min-width: 900px) {
     .app { grid-template-columns: minmax(0, 1fr) 360px; }
-    .preview { min-height: 100vh; }
-    .controls { height: 100vh; overflow: auto; position: sticky; top: 0;
+    .preview { min-height: 100%; }
+    .controls { position: sticky; top: env(safe-area-inset-top, 0px); overflow: auto;
+      max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
       border-top: 0; border-left: 1px solid var(--line); }
-  }
-</style>
+  }</style>
 </head>
 <body>
 <div class="app">
@@ -119,6 +162,7 @@
       <button id="dlOne">Download this plate as SVG</button>
       <button id="dlAll" class="secondary">Download whole stack as one SVG</button>
     </div>
+    <p class="status" id="status" role="status"></p>
     <p class="hint">Slot 0 stays at 0°. The rim notch rotates by plate × skew, so stacking with every notch against one key in the jig gives the helical offset.</p>
   </aside>
 </div>
@@ -209,22 +253,26 @@ function platePrimitives(p, plateIndex) {
   return out;
 }
 
+// On screen the outlines follow the theme; an exported file always carries the
+// laser convention — near-black CUT, red ENGRAVE — whatever the viewer's theme.
 function plateMarkup(p, plateIndex, { guides = false, preview = false } = {}) {
   const { rim, bore, angle } = plateOutlines(p, plateIndex);
+  const cutInk = preview ? 'var(--cut)' : '#0f1a2b';
+  const engraveInk = preview ? 'var(--engrave)' : '#d1291d';
   const sk = preview
     ? 'fill="none" stroke-width="1.1" vector-effect="non-scaling-stroke"'
     : 'fill="none" stroke-width="0.1"';
-  let s = `<path d="${segsToPath(rim)}" stroke="#0f1a2b" ${sk}/>`;
-  if (bore.length) s += `<path d="${segsToPath(bore)}" stroke="#0f1a2b" ${sk}/>`;
+  let s = `<path d="${segsToPath(rim)}" stroke="${cutInk}" ${sk}/>`;
+  if (bore.length) s += `<path d="${segsToPath(bore)}" stroke="${cutInk}" ${sk}/>`;
   const t = plateLabel(p, plateIndex);
   if (t) s += `<text x="${f4(t.x)}" y="${f4(t.y)}" font-size="${f4(t.h)}" font-family="Arial, sans-serif"
-      text-anchor="middle" dominant-baseline="central" fill="#d1291d" transform="rotate(${t.rot.toFixed(2)} ${f4(t.x)} ${f4(t.y)})">${t.s}</text>`;
+      text-anchor="middle" dominant-baseline="central" fill="${engraveInk}" transform="rotate(${t.rot.toFixed(2)} ${f4(t.x)} ${f4(t.y)})">${t.s}</text>`;
   if (guides) {
-    const g = 'stroke="#3b7bbf" stroke-width="1" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"';
+    const g = 'stroke="var(--guide)" stroke-width="1" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"';
     s += `<line x1="0" y1="0" x2="${p.R}" y2="0" ${g} opacity="0.35"/>`;
     const a = angle * Math.PI / 180;
     s += `<line x1="0" y1="0" x2="${f4(p.R * Math.cos(a))}" y2="${f4(p.R * Math.sin(a))}" ${g}/>`;
-    s += `<circle cx="0" cy="0" r="${f4(p.R * 0.008)}" fill="#3b7bbf"/>`;
+    s += `<circle cx="0" cy="0" r="${f4(p.R * 0.008)}" fill="var(--guide)"/>`;
   }
   return s;
 }
@@ -299,11 +347,69 @@ function render() {
     `stack twist ${twist.toFixed(2)}° = ${inPitch} slot pitches`;
 }
 
-function download(name, text, mime) {
+/* ---- Saving -------------------------------------------------------------
+   Published on claude.ai the page cannot start a download itself, so it hands
+   the file to the `downloads` capability and the viewer confirms it. Opened as
+   a plain local file there is no capability, so it falls back to a blob link.
+   One source, both hosts.                                                   */
+
+let dlNs, dlResolved = false;
+async function downloads() {
+  if (dlResolved) return dlNs;
+  dlNs = window.claude?.use ? await window.claude.use('downloads').catch(() => null) : null;
+  dlResolved = true;
+  return dlNs;
+}
+
+let statusTimer;
+function status(text, tone = '') {
+  const el = $('status');
+  el.textContent = text;
+  el.dataset.tone = tone;
+  clearTimeout(statusTimer);
+  if (text) statusTimer = setTimeout(() => { el.textContent = ''; el.dataset.tone = ''; }, 8000);
+}
+
+const SAVE_ERRORS = {
+  declined: 'Save cancelled.',
+  rate_limited: 'A save prompt is already open. Try again in a moment.',
+  too_large: 'That file is too big to save here. Export fewer plates at a time.',
+  bad_request: 'The file could not be prepared. Check the dimensions and try again.',
+};
+
+function saveViaBlob(filename, text, mime) {
   const url = URL.createObjectURL(new Blob([text], { type: mime }));
-  const a = Object.assign(document.createElement('a'), { href: url, download: name });
+  const a = Object.assign(document.createElement('a'), { href: url, download: filename });
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function saveFile(filename, text, mime) {
+  const dl = await downloads();
+  if (!dl) {
+    if (window.claude) { status('Saving files is not available in this view.', 'warn'); return; }
+    saveViaBlob(filename, text, mime);
+    status(`Saved ${filename}`);
+    return;
+  }
+  try {
+    await dl.save({ filename, data: text });
+    status(`Saved ${filename}`);
+  } catch (err) {
+    const code = err?.code ?? 'unavailable';
+    // The viewer's allowlist covers svg but not dxf. DXF is plain text, so offer
+    // the same bytes under .txt and tell the viewer what to rename it to.
+    if (code === 'rejected_extension' && filename.endsWith('.dxf')) {
+      try {
+        await dl.save({ filename: `${filename}.txt`, data: text });
+        status(`Saved ${filename}.txt — rename it to ${filename} to open it in CAD.`);
+      } catch (retry) {
+        status(SAVE_ERRORS[retry?.code] ?? 'The file could not be saved in this view.', 'warn');
+      }
+      return;
+    }
+    status(SAVE_ERRORS[code] ?? 'The file could not be saved in this view.', 'warn');
+  }
 }
 
 function exportPlates(indices, name) {
@@ -318,9 +424,9 @@ function exportPlates(indices, name) {
   }));
   if (fmt === 'svg') {
     const inner = items.map(it => `<g transform="translate(${f4(it.dx)} ${f4(it.dy)})">${plateMarkup(p, it.idx)}</g>`).join('\n');
-    download(name + '.svg', svgDoc(inner, cols * cell, rows * cell), 'image/svg+xml');
+    saveFile(name + '.svg', svgDoc(inner, cols * cell, rows * cell), 'image/svg+xml');
   } else {
-    download(name + '.dxf', dxfDoc(items.map(it => ({ prims: platePrimitives(p, it.idx), dx: it.dx, dy: it.dy }))), 'application/dxf');
+    saveFile(name + '.dxf', dxfDoc(items.map(it => ({ prims: platePrimitives(p, it.idx), dx: it.dx, dy: it.dy }))), 'application/dxf');
   }
 }
 
