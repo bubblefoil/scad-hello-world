@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lamination disc</title>
+<style>
+  :root {
+    --paper: #eef0f2;
+    --panel: #ffffff;
+    --ink: #172033;
+    --ink-2: #5b6474;
+    --line: #cfd5dd;
+    --cut: #0f1a2b;
+    --engrave: #d1291d;
+    --guide: #3b7bbf;
+    --warn: #b45309;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--paper); color: var(--ink);
+    font: 15px/1.45 "Avenir Next", "Segoe UI", Helvetica, Arial, sans-serif; }
+  .app { display: grid; grid-template-columns: 1fr; min-height: 100vh; }
+  .preview { display: flex; flex-direction: column; align-items: center; justify-content: center;
+    width: 100%; min-width: 0; padding: 20px 16px 8px; min-height: 58vh; }
+  .preview svg { width: min(100%, 78vh); max-width: 720px; height: auto; display: block; }
+  .readout { margin-top: 10px; color: var(--ink-2); font-size: 13px; font-variant-numeric: tabular-nums; text-align: center; }
+  .readout b { color: var(--ink); font-weight: 600; }
+  .warn { color: var(--warn); font-size: 13px; text-align: center; margin-top: 6px; min-height: 1.4em; }
+
+  .controls { background: var(--panel); border-top: 1px solid var(--line); padding: 20px 18px 28px; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 2px; letter-spacing: -0.01em; }
+  .sub { color: var(--ink-2); font-size: 13px; margin: 0 0 18px; }
+  fieldset { border: 0; padding: 0; margin: 0 0 18px; }
+  legend { font-weight: 600; font-size: 14px; padding: 0; margin-bottom: 8px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
+  label.f { display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; color: var(--ink-2); }
+  label.f input, label.f select { font: inherit; font-size: 15px; color: var(--ink); padding: 7px 9px;
+    border: 1px solid var(--line); border-radius: 6px; background: #fff; width: 100%; font-variant-numeric: tabular-nums; }
+  label.f input:focus, label.f select:focus { outline: 2px solid var(--guide); outline-offset: 1px; border-color: var(--guide); }
+  label.chk { display: flex; align-items: center; gap: 8px; font-size: 13.5px; margin-top: 8px; }
+  .plate { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; margin-top: 6px; }
+  .plate input[type=range] { width: 100%; accent-color: var(--guide); }
+  .plate output { font-variant-numeric: tabular-nums; min-width: 4.5em; text-align: right; font-weight: 600; }
+  .actions { display: grid; gap: 8px; margin-top: 6px; }
+  button { font: inherit; font-weight: 600; padding: 11px 14px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--cut); background: var(--cut); color: #fff; }
+  button.secondary { background: #fff; color: var(--cut); }
+  button.tiny { font-size: 12.5px; font-weight: 500; padding: 6px 10px; margin-top: 8px;
+    background: #fff; color: var(--cut); border-color: var(--line); }
+  button:focus-visible { outline: 2px solid var(--guide); outline-offset: 2px; }
+  .hint { font-size: 12.5px; color: var(--ink-2); margin: 10px 0 0; }
+
+  @media (min-width: 900px) {
+    .app { grid-template-columns: minmax(0, 1fr) 360px; }
+    .preview { min-height: 100vh; }
+    .controls { height: 100vh; overflow: auto; position: sticky; top: 0;
+      border-top: 0; border-left: 1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <section class="preview">
+    <div id="svgHost" aria-label="Disc preview"></div>
+    <div class="readout" id="readout"></div>
+    <div class="warn" id="warn" role="status"></div>
+  </section>
+
+  <aside class="controls">
+    <h1>Lamination disc</h1>
+    <p class="sub">All dimensions in millimetres. Black / layer CUT is cut, red / layer ENGRAVE is engrave.</p>
+
+    <fieldset>
+      <legend>Ring</legend>
+      <div class="grid">
+        <label class="f">Outer diameter <input id="od" type="number" step="0.1" min="1" value="200"></label>
+        <label class="f">Bore diameter <input id="id" type="number" step="0.1" min="0" value="150"></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Coil slots (bore edge)</legend>
+      <div class="grid">
+        <label class="f">Count <input id="n" type="number" step="1" min="0" value="64"></label>
+        <label class="f">Width <input id="sw" type="number" step="0.1" min="0" value="4.5"></label>
+        <label class="f">Depth <input id="sd" type="number" step="0.1" min="0" value="15"></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Alignment notch (outer rim)</legend>
+      <div class="grid">
+        <label class="f">Width <input id="kw" type="number" step="0.1" min="0" value="4"></label>
+        <label class="f">Depth <input id="kd" type="number" step="0.1" min="0" value="2"></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Stack skew</legend>
+      <div class="grid">
+        <label class="f">Plates in stack <input id="plates" type="number" step="1" min="1" value="12"></label>
+        <label class="f">Skew per plate (°) <input id="skew" type="number" step="0.001" value="0.511"></label>
+      </div>
+      <div class="plate">
+        <span>Plate</span>
+        <input id="idx" type="range" min="0" max="11" value="0" aria-label="Plate index">
+        <output id="idxOut">0</output>
+      </div>
+      <button id="fitSkew" class="tiny">Set skew to one slot pitch across the stack</button>
+      <label class="chk"><input id="engrave" type="checkbox" checked> Engrave plate number</label>
+    </fieldset>
+
+    <div class="grid" style="margin-bottom:8px">
+      <label class="f">File format
+        <select id="fmt"><option value="svg">SVG</option><option value="dxf">DXF (R12)</option></select>
+      </label>
+    </div>
+    <div class="actions">
+      <button id="dlOne">Download this plate as SVG</button>
+      <button id="dlAll" class="secondary">Download whole stack as one SVG</button>
+    </div>
+    <p class="hint">Slot 0 stays at 0°. The rim notch rotates by plate × skew, so stacking with every notch against one key in the jig gives the helical offset.</p>
+  </aside>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const num = id => parseFloat($(id).value) || 0;
+const f4 = v => (+v.toFixed(4)).toString();
+
+function readParams() {
+  return {
+    R: num('od') / 2, r: num('id') / 2,
+    n: Math.max(0, Math.round(num('n'))), sw: num('sw'), sd: num('sd'),
+    kw: num('kw'), kd: num('kd'),
+    plates: Math.max(1, Math.round(num('plates'))), skew: num('skew'),
+    idx: Math.round(num('idx')), engrave: $('engrave').checked,
+  };
+}
+
+// Circle of `radius` with `count` rectangular parallel-sided notches of `width`,
+// cut `depth` in the direction `dir` (-1 = inward, +1 = outward).
+// Notch 0 is centred on angle `offsetDeg`. Returns line/arc segments in mm,
+// x right, y down (screen frame), angles in radians increasing clockwise on screen.
+function notchedCircle(radius, count, width, depth, offsetDeg, dir) {
+  if (count < 1 || width <= 0 || depth <= 0)
+    return [{ t: 'circle', r: radius }];
+  const h = Math.min(width / 2, radius * 0.999);
+  const xo = Math.sqrt(radius * radius - h * h);
+  const xb = radius + dir * depth;
+  const alpha = Math.asin(h / radius);
+  const step = 2 * Math.PI / count;
+  const rot = (x, y, t) => [x * Math.cos(t) - y * Math.sin(t), x * Math.sin(t) + y * Math.cos(t)];
+  const segs = [];
+  for (let i = 0; i < count; i++) {
+    const t = offsetDeg * Math.PI / 180 + i * step;
+    const a = rot(xo, -h, t), b = rot(xb, -h, t), c = rot(xb, h, t), d = rot(xo, h, t);
+    segs.push({ t: 'line', p: a, q: b }, { t: 'line', p: b, q: c }, { t: 'line', p: c, q: d });
+    segs.push({ t: 'arc', r: radius, a1: t + alpha, a2: t + step - alpha });
+  }
+  return segs;
+}
+
+function segsToPath(segs) {
+  let d = '';
+  for (const s of segs) {
+    if (s.t === 'circle')
+      d += `M${f4(s.r)} 0A${f4(s.r)} ${f4(s.r)} 0 1 1 ${f4(-s.r)} 0A${f4(s.r)} ${f4(s.r)} 0 1 1 ${f4(s.r)} 0Z`;
+    else if (s.t === 'line')
+      d += `${d ? 'L' : 'M' + f4(s.p[0]) + ' ' + f4(s.p[1]) + 'L'}${f4(s.q[0])} ${f4(s.q[1])}`;
+    else {
+      const large = (s.a2 - s.a1) > Math.PI ? 1 : 0;
+      d += `A${f4(s.r)} ${f4(s.r)} 0 ${large} 1 ${f4(s.r * Math.cos(s.a2))} ${f4(s.r * Math.sin(s.a2))}`;
+    }
+  }
+  return d + (segs[0].t === 'circle' ? '' : 'Z');
+}
+
+// The two closed outlines of a plate. Coil slots sit on the bore and are cut
+// outward (teeth point inward); the outer rim carries the alignment notch.
+function plateOutlines(p, plateIndex) {
+  const angle = plateIndex * p.skew;
+  return {
+    angle,
+    rim: notchedCircle(p.R, 1, p.kw, p.kd, angle, -1),
+    bore: p.r > 0 ? notchedCircle(p.r, p.n, p.sw, p.sd, 0, +1) : [],
+  };
+}
+
+// Plate number, engraved in the yoke opposite the alignment notch.
+function plateLabel(p, plateIndex) {
+  if (!p.engrave) return null;
+  const yoke = p.R - p.sd - p.r;
+  if (yoke <= 0) return null;
+  const angle = plateIndex * p.skew;
+  const rr = p.r + p.sd + yoke / 2, a = (angle + 180) * Math.PI / 180;
+  return {
+    t: 'text', layer: 'ENGRAVE', x: rr * Math.cos(a), y: rr * Math.sin(a),
+    h: Math.max(1, Math.min(8, yoke * 0.45)), rot: angle + 270, s: String(plateIndex),
+  };
+}
+
+// Plate as a flat list of primitives for DXF: {layer, ...}
+function platePrimitives(p, plateIndex) {
+  const { rim, bore } = plateOutlines(p, plateIndex);
+  const out = [...rim, ...bore].map(s => ({ ...s, layer: 'CUT' }));
+  const label = plateLabel(p, plateIndex);
+  if (label) out.push(label);
+  return out;
+}
+
+function plateMarkup(p, plateIndex, { guides = false, preview = false } = {}) {
+  const { rim, bore, angle } = plateOutlines(p, plateIndex);
+  const sk = preview
+    ? 'fill="none" stroke-width="1.1" vector-effect="non-scaling-stroke"'
+    : 'fill="none" stroke-width="0.1"';
+  let s = `<path d="${segsToPath(rim)}" stroke="#0f1a2b" ${sk}/>`;
+  if (bore.length) s += `<path d="${segsToPath(bore)}" stroke="#0f1a2b" ${sk}/>`;
+  const t = plateLabel(p, plateIndex);
+  if (t) s += `<text x="${f4(t.x)}" y="${f4(t.y)}" font-size="${f4(t.h)}" font-family="Arial, sans-serif"
+      text-anchor="middle" dominant-baseline="central" fill="#d1291d" transform="rotate(${t.rot.toFixed(2)} ${f4(t.x)} ${f4(t.y)})">${t.s}</text>`;
+  if (guides) {
+    const g = 'stroke="#3b7bbf" stroke-width="1" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"';
+    s += `<line x1="0" y1="0" x2="${p.R}" y2="0" ${g} opacity="0.35"/>`;
+    const a = angle * Math.PI / 180;
+    s += `<line x1="0" y1="0" x2="${f4(p.R * Math.cos(a))}" y2="${f4(p.R * Math.sin(a))}" ${g}/>`;
+    s += `<circle cx="0" cy="0" r="${f4(p.R * 0.008)}" fill="#3b7bbf"/>`;
+  }
+  return s;
+}
+
+function svgDoc(inner, w, h) {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${w}mm" height="${h}mm" viewBox="0 0 ${w} ${h}">
+${inner}
+</svg>`;
+}
+
+// DXF R12 (AC1009), millimetres, y flipped to CAD convention (y up).
+function dxfDoc(items) { // items: [{prims, dx, dy}]
+  const L = [];
+  const g = (code, val) => L.push(code, val);
+  g(0, 'SECTION'); g(2, 'HEADER'); g(9, '$ACADVER'); g(1, 'AC1009'); g(9, '$INSUNITS'); g(70, 4); g(0, 'ENDSEC');
+  g(0, 'SECTION'); g(2, 'TABLES'); g(0, 'TABLE'); g(2, 'LAYER'); g(70, 2);
+  for (const [name, color] of [['CUT', 7], ['ENGRAVE', 1]]) { g(0, 'LAYER'); g(2, name); g(70, 0); g(62, color); g(6, 'CONTINUOUS'); }
+  g(0, 'ENDTAB'); g(0, 'ENDSEC');
+  g(0, 'SECTION'); g(2, 'ENTITIES');
+  const deg = r => ((r * 180 / Math.PI) % 360 + 360) % 360;
+  for (const { prims, dx, dy } of items) for (const s of prims) {
+    if (s.t === 'line') { g(0, 'LINE'); g(8, s.layer); g(10, f4(s.p[0] + dx)); g(20, f4(-(s.p[1] + dy))); g(11, f4(s.q[0] + dx)); g(21, f4(-(s.q[1] + dy))); }
+    else if (s.t === 'circle') { g(0, 'CIRCLE'); g(8, s.layer); g(10, f4(dx)); g(20, f4(-dy)); g(40, f4(s.r)); }
+    else if (s.t === 'arc') { g(0, 'ARC'); g(8, s.layer); g(10, f4(dx)); g(20, f4(-dy)); g(40, f4(s.r)); g(50, f4(deg(-s.a2))); g(51, f4(deg(-s.a1))); }
+    else if (s.t === 'text') { g(0, 'TEXT'); g(8, s.layer); g(10, f4(s.x + dx)); g(20, f4(-(s.y + dy))); g(40, f4(s.h)); g(1, s.s); g(50, f4(((-s.rot) % 360 + 360) % 360)); g(72, 1); g(73, 2); g(11, f4(s.x + dx)); g(21, f4(-(s.y + dy))); }
+  }
+  g(0, 'ENDSEC'); g(0, 'EOF');
+  return L.join('\n') + '\n';
+}
+
+// Geometry derived from the parameters, slot figures measured at the bore.
+function metrics(p) {
+  const pitch = p.n > 0 ? 2 * Math.PI * p.r / p.n : 0;
+  const halfSlot = p.r > 0 ? Math.min(1, p.sw / (2 * p.r)) : 1;
+  const tooth = p.n > 0 ? 2 * p.r * (Math.PI / p.n - Math.asin(halfSlot)) : 0;
+  return { pitch, tooth, yoke: p.R - p.sd - p.r, slotPitchDeg: p.n > 0 ? 360 / p.n : 0 };
+}
+
+function validate(p) {
+  const m = metrics(p);
+  const msgs = [];
+  if (p.r >= p.R) msgs.push('Bore diameter must be smaller than outer diameter.');
+  if (p.r <= 0 && p.n > 0) msgs.push('Slots sit on the bore, so the bore diameter must be above zero.');
+  if (p.n > 0 && p.sw >= 2 * p.r) msgs.push('Slot width exceeds the bore diameter.');
+  if (p.n > 0 && m.tooth <= 0) msgs.push('Teeth have no width left: reduce slot count or slot width.');
+  if (m.yoke <= 0) msgs.push('Slot depth eats through the ring.');
+  if (m.yoke - p.kd <= 0) msgs.push('Alignment notch breaks into the slot bottoms.');
+  return msgs;
+}
+
+function render() {
+  const p = readParams();
+  $('idx').max = p.plates - 1;
+  if (p.idx > p.plates - 1) { $('idx').value = p.plates - 1; p.idx = p.plates - 1; }
+  $('idxOut').value = p.idx;
+  $('warn').textContent = validate(p)[0] || '';
+
+  const m = p.R * 0.06 + 2;
+  const size = 2 * (p.R + m);
+  $('svgHost').innerHTML =
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-p.R - m} ${-p.R - m} ${size} ${size}">
+       ${plateMarkup(p, p.idx, { guides: true, preview: true })}</svg>`;
+
+  const g = metrics(p);
+  const twist = (p.plates - 1) * p.skew;
+  const inPitch = g.slotPitchDeg > 0 ? (twist / g.slotPitchDeg).toFixed(2) : '—';
+  $('readout').innerHTML =
+    `Plate <b>${p.idx}</b> of ${p.plates} &nbsp;·&nbsp; notch at <b>${(p.idx * p.skew).toFixed(2)}°</b> &nbsp;·&nbsp; ` +
+    `slot pitch <b>${g.pitch.toFixed(2)} mm</b> (${g.slotPitchDeg.toFixed(3)}°) &nbsp;·&nbsp; ` +
+    `tooth tip <b>${g.tooth.toFixed(2)} mm</b> &nbsp;·&nbsp; yoke <b>${g.yoke.toFixed(2)} mm</b><br>` +
+    `stack twist ${twist.toFixed(2)}° = ${inPitch} slot pitches`;
+}
+
+function download(name, text, mime) {
+  const url = URL.createObjectURL(new Blob([text], { type: mime }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: name });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function exportPlates(indices, name) {
+  const p = readParams();
+  const fmt = $('fmt').value;
+  const gap = 3, cell = 2 * p.R + gap;
+  const cols = Math.ceil(Math.sqrt(indices.length)), rows = Math.ceil(indices.length / cols);
+  const items = indices.map((idx, k) => ({
+    idx,
+    dx: (k % cols) * cell + p.R + gap / 2,
+    dy: Math.floor(k / cols) * cell + p.R + gap / 2,
+  }));
+  if (fmt === 'svg') {
+    const inner = items.map(it => `<g transform="translate(${f4(it.dx)} ${f4(it.dy)})">${plateMarkup(p, it.idx)}</g>`).join('\n');
+    download(name + '.svg', svgDoc(inner, cols * cell, rows * cell), 'image/svg+xml');
+  } else {
+    download(name + '.dxf', dxfDoc(items.map(it => ({ prims: platePrimitives(p, it.idx), dx: it.dx, dy: it.dy }))), 'application/dxf');
+  }
+}
+
+$('fitSkew').onclick = () => {
+  const p = readParams();
+  if (p.n < 1 || p.plates < 2) return;
+  $('skew').value = (360 / p.n / (p.plates - 1)).toFixed(3);
+  render();
+};
+
+$('dlOne').onclick = () => { const p = readParams(); exportPlates([p.idx], `disc_plate${String(p.idx).padStart(2, '0')}`); };
+$('dlAll').onclick = () => { const p = readParams(); exportPlates([...Array(p.plates).keys()], `disc_stack_${p.plates}x`); };
+$('fmt').addEventListener('change', () => {
+  const x = $('fmt').value.toUpperCase();
+  $('dlOne').textContent = `Download this plate as ${x}`;
+  $('dlAll').textContent = `Download whole stack as one ${x}`;
+});
+
+document.querySelectorAll('input').forEach(el => el.addEventListener('input', render));
+render();
+</script>
+</body>
+</html>
